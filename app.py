@@ -4,7 +4,10 @@ import sqlite3
 
 from flask import Flask, abort, jsonify
 
+from admin import admin
+
 app = Flask(__name__)
+app.register_blueprint(admin)
 DB_PATH = "users.db"
 
 
@@ -29,4 +32,4 @@ def get_user(user_id):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host="127.0.0.1", port=5000, debug=True)
