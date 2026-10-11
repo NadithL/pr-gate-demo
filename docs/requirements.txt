@@ -1,0 +1,2 @@
+# Only used to build the documentation site locally; never installed in the application.
+Pygments==2.5.2

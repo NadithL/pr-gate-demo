@@ -2,7 +2,9 @@
 
 import sqlite3
 
-from flask import Flask, abort, jsonify
+from flask import Flask, abort, jsonify, request
+
+from exporter import export, load_report
 
 app = Flask(__name__)
 DB_PATH = "users.db"
@@ -27,6 +29,11 @@ def get_user(user_id):
         abort(404)
     return jsonify(dict(row))
 
+
+
+@app.post("/reports/export")
+def export_report():
+    return export(load_report(request.get_data(as_text=True)))
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000)
