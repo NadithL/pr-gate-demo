@@ -64,6 +64,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CF_WORKER_NAME: ${{ vars.CF_WORKER_NAME }}
+          DASHBOARD_USERS: ${{ vars.DASHBOARD_USERS }}
+          DASHBOARD_GITHUB_CLIENT_ID: ${{ vars.DASHBOARD_GITHUB_CLIENT_ID }}
         run: bash pr-gate-ci/.github/pr-gate/publish.sh
 
       - name: Merge gate result

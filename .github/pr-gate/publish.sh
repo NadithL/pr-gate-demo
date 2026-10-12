@@ -26,7 +26,7 @@ else
 fi
 
 # 2. Dashboard: static app from the site image + data built by the real API code, deployed as a
-#    Cloudflare Worker (<name>.<account>.workers.dev) behind a shared password (worker.js).
+#    Cloudflare Worker (<name>.<account>.workers.dev) behind "Sign in with GitHub" (worker.js).
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CF_WORKER_NAME:-}" ]; then
   echo "Cloudflare not configured; skipping the dashboard deploy"; exit 0
 fi
@@ -36,8 +36,11 @@ docker cp pr-gate-site:/site ./site
 docker rm pr-gate-site > /dev/null
 docker compose -f "$COMPOSE_FILE" --profile site run --rm --no-deps site
 cp -R out/site-data site/data
-# worker.js checks the shared dashboard password on every request before serving any file.
+# worker.js runs "Sign in with GitHub" on every request before serving any file; only DASHBOARD_USERS get in.
 # The dashboard uses client-side routes (/runs/12): unknown paths fall back to index.html.
+if ! [[ "${DASHBOARD_USERS:-}" =~ ^[A-Za-z0-9-]+(,[A-Za-z0-9-]+)*$ ]] || ! [[ "${DASHBOARD_GITHUB_CLIENT_ID:-}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "::error::Set the DASHBOARD_USERS (e.g. alice,bob) and DASHBOARD_GITHUB_CLIENT_ID repository variables"; exit 1
+fi
 cp pr-gate-ci/.github/pr-gate/worker.js worker.js
 cat > wrangler.json <<EOF
 {
@@ -45,6 +48,7 @@ cat > wrangler.json <<EOF
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
+  "vars": { "ALLOWED_USERS": "${DASHBOARD_USERS}", "GITHUB_CLIENT_ID": "${DASHBOARD_GITHUB_CLIENT_ID}" },
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",
