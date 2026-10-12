@@ -26,7 +26,7 @@ else
 fi
 
 # 2. Dashboard: static app from the site image + data built by the real API code, deployed as a
-#    static-assets Cloudflare Worker (<name>.<account>.workers.dev, protected by Cloudflare Access).
+#    Cloudflare Worker (<name>.<account>.workers.dev) behind a shared password (worker.js).
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CF_WORKER_NAME:-}" ]; then
   echo "Cloudflare not configured; skipping the dashboard deploy"; exit 0
 fi
@@ -36,13 +36,21 @@ docker cp pr-gate-site:/site ./site
 docker rm pr-gate-site > /dev/null
 docker compose -f "$COMPOSE_FILE" --profile site run --rm --no-deps site
 cp -R out/site-data site/data
+# worker.js checks the shared dashboard password on every request before serving any file.
 # The dashboard uses client-side routes (/runs/12): unknown paths fall back to index.html.
+cp pr-gate-ci/.github/pr-gate/worker.js worker.js
 cat > wrangler.json <<EOF
 {
   "name": "${CF_WORKER_NAME}",
+  "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  "assets": { "directory": "./site", "not_found_handling": "single-page-application" }
+  "assets": {
+    "directory": "./site",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  }
 }
 EOF
 npx --yes wrangler@4 deploy --config wrangler.json
