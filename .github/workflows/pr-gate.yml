@@ -27,10 +27,11 @@ jobs:
       DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
       COMPOSE_FILE: ${{ github.workspace }}/pr-gate-ci/.github/pr-gate/compose.yml
     steps:
-      # PR-Gate's own config comes from the base branch, never from the PR under review.
+      # PR-Gate's own config comes from the base branch as it is now (base.sha is fixed when the PR opens),
+      # never from the PR under review.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.ref }}
           path: pr-gate-ci
           sparse-checkout: .github/pr-gate
           persist-credentials: false
