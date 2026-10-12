@@ -1,0 +1,73 @@
+# PR-Gate (C4): review every PR from a branch of this repo with the published PR-Gate images.
+# Sets the `pr-gate/policy` commit status (the deterministic merge gate) and `pr-gate/review` (AI triage,
+# advisory), posts one review, stores the run in the private results repo and redeploys the dashboard.
+name: PR-Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Forks get a read-only token and no secrets: only teammates' branches in this repo are reviewed.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PR_GATE_IMAGES: ${{ vars.PR_GATE_IMAGES }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+      COMPOSE_FILE: ${{ github.workspace }}/pr-gate-ci/.github/pr-gate/compose.yml
+    steps:
+      # PR-Gate's own config comes from the base branch, never from the PR under review.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: pr-gate-ci
+          sparse-checkout: .github/pr-gate
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.RESULTS_REPO }}
+          token: ${{ secrets.RESULTS_TOKEN }}
+          path: results
+
+      - name: Review
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          mkdir -p out && chmod 777 out
+          docker compose pull -q
+          set +e
+          docker compose run --rm review
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          docker compose down -v
+
+      - name: Job summary
+        if: always()
+        run: if [ -f out/summary.md ]; then cat out/summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Store results and deploy the dashboard
+        if: always() && steps.review.outputs.exit != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_WORKER_NAME: ${{ vars.CF_WORKER_NAME }}
+        run: bash pr-gate-ci/.github/pr-gate/publish.sh
+
+      - name: Merge gate result
+        if: steps.review.outputs.exit != '0'
+        run: |
+          echo "::error::PR-Gate blocked this PR or could not complete (see the summary and the pr-gate/policy status)"
+          exit 1

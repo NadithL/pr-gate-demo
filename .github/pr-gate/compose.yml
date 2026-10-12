@@ -1,0 +1,95 @@
+# PR-Gate in GitHub Actions (C4): same three-way split and hardening as the local stack.
+#   review   one-shot pipeline run (backend image): GitHub token only
+#   scanner  Semgrep / Gitleaks / OSV-Scanner: no secrets, workspaces read-only
+#   agent    Claude Code CLI: the Claude token only, workspaces read-only
+# Paths come from the workflow: GITHUB_WORKSPACE (results/, out/) and GITHUB_EVENT_PATH.
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+
+x-backend: &backend
+  <<: *hardened
+  image: ${PR_GATE_IMAGES}/pr-gate-backend:latest
+  environment:
+    GITHUB_TOKEN: ${GITHUB_TOKEN}
+    GITHUB_RUN_ID: ${GITHUB_RUN_ID}
+    GITHUB_REPOSITORY: ${GITHUB_REPOSITORY}
+    GITHUB_SERVER_URL: ${GITHUB_SERVER_URL}
+    DASHBOARD_URL: ${DASHBOARD_URL:-}
+    VERIFY_TIMEOUT_S: ${VERIFY_TIMEOUT_S:-600}
+    PUBLISH_MIN_SEVERITY: ${PUBLISH_MIN_SEVERITY:-medium}
+    COMMIT_STATUS_ENABLED: "true"
+    DB_PATH: /tmp/pr-gate.db
+    ARTIFACTS_DIR: /tmp/artifacts
+    WORKSPACES_DIR: /workspaces
+    SCANNER_URL: http://scanner:9000
+    AGENT_URL: http://agent:9100
+    BENCHMARK_FILE: /app/config/benchmark-ground-truth.json
+  volumes:
+    - ${GITHUB_EVENT_PATH}:/event.json:ro
+    - ${GITHUB_WORKSPACE}/results:/results:ro
+    - ${GITHUB_WORKSPACE}/out:/out
+    - workspaces:/workspaces
+  tmpfs:
+    - /tmp:size=512m
+  networks: [internal]
+  mem_limit: 1g
+
+services:
+  review:
+    <<: *backend
+    command: ["python", "-m", "app.cli", "review", "--event", "/event.json", "--results", "/results", "--out", "/out"]
+    depends_on:
+      scanner: { condition: service_healthy }
+      agent: { condition: service_healthy }
+
+  command:
+    <<: *backend
+    profiles: [command]
+    command: ["python", "-m", "app.cli", "command", "--event", "/event.json", "--results", "/results", "--out", "/out"]
+
+  site:
+    <<: *backend
+    profiles: [site]
+    command: ["python", "-m", "app.cli", "site", "--results", "/results", "--out", "/out/site-data"]
+
+  scanner:
+    <<: *hardened
+    image: ${PR_GATE_IMAGES}/pr-gate-scanner:latest
+    volumes:
+      - workspaces:/workspaces:ro
+    tmpfs:
+      - /tmp:size=1g
+      - /home/scanner:size=256m,uid=1100,gid=1100,mode=0700
+    networks: [internal]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
+      interval: 3s
+      retries: 20
+
+  agent:
+    <<: *hardened
+    image: ${PR_GATE_IMAGES}/pr-gate-agent:latest
+    environment:
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN}
+    volumes:
+      - workspaces:/workspaces:ro
+    tmpfs:
+      - /tmp:size=512m
+      - /home/agent:size=256m,uid=1200,gid=1200,mode=0700
+    networks: [internal]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/health')"]
+      interval: 3s
+      retries: 20
+
+networks:
+  internal: {}
+
+volumes:
+  workspaces: {}

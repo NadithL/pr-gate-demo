@@ -1,0 +1,64 @@
+# PR-Gate (C2/C4): `/pr-gate suppress F<n> <justification>` and `/pr-gate unsuppress F<n> <justification>`
+# in a PR comment. issue_comment workflows always run from the default branch, so a PR cannot change this.
+# The backend re-checks that the commenter has write access before acting.
+name: PR-Gate command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: pr-gate-cmd-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  command:
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/pr-gate') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PR_GATE_IMAGES: ${{ vars.PR_GATE_IMAGES }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+      COMPOSE_FILE: ${{ github.workspace }}/pr-gate-ci/.github/pr-gate/compose.yml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: pr-gate-ci
+          sparse-checkout: .github/pr-gate
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.RESULTS_REPO }}
+          token: ${{ secrets.RESULTS_TOKEN }}
+          path: results
+
+      - name: Run the command
+        id: command
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p out && chmod 777 out
+          set +e
+          docker compose --profile command run --rm --no-deps command
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Store results and deploy the dashboard
+        if: always() && steps.command.outputs.exit != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CF_WORKER_NAME: ${{ vars.CF_WORKER_NAME }}
+        run: bash pr-gate-ci/.github/pr-gate/publish.sh
+
+      - name: Command result
+        if: steps.command.outputs.exit != '0'
+        run: exit 1
