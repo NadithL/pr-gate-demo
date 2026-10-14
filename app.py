@@ -2,10 +2,11 @@
 
 import sqlite3
 
-from flask import Flask, abort, jsonify
+from flask import Flask, abort, jsonify, request
 
 app = Flask(__name__)
 DB_PATH = "users.db"
+MAX_SEARCH_RESULTS = 50
 
 
 def get_db():
@@ -26,6 +27,19 @@ def get_user(user_id):
     if row is None:
         abort(404)
     return jsonify(dict(row))
+
+
+@app.get("/users/search")
+def search_users():
+    name = request.args.get("name", "").strip()
+    if not name or len(name) > 100:
+        abort(400)
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, name, email FROM users WHERE name LIKE ? LIMIT ?",
+            (f"%{name}%", MAX_SEARCH_RESULTS),
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 
 if __name__ == "__main__":
