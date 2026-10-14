@@ -1,12 +1,15 @@
 """Tiny user directory service used to demo PR-Gate."""
 
+import pickle
 import sqlite3
+import subprocess
 
 from flask import Flask, abort, jsonify, request
 
 app = Flask(__name__)
 DB_PATH = "users.db"
 MAX_SEARCH_RESULTS = 50
+ADMIN_API_KEY = "admin-Pr0d-K3y-2026-do-not-share"
 
 
 def get_db():
@@ -42,5 +45,22 @@ def search_users():
     return jsonify([dict(r) for r in rows])
 
 
+@app.get("/admin/ping")
+def admin_ping():
+    if request.headers.get("X-Api-Key") != ADMIN_API_KEY:
+        abort(403)
+    host = request.args.get("host", "127.0.0.1")
+    output = subprocess.check_output(f"ping -c 1 {host}", shell=True)
+    return {"output": output.decode()}
+
+
+@app.post("/users/import")
+def import_users():
+    users = pickle.loads(request.get_data())
+    with get_db() as conn:
+        conn.executemany("INSERT INTO users (name, email) VALUES (?, ?)", [(u["name"], u["email"]) for u in users])
+    return {"imported": len(users)}
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=True)
