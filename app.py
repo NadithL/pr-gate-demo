@@ -4,7 +4,10 @@ import sqlite3
 
 from flask import Flask, abort, jsonify
 
+from reports_api import reports_api
+
 app = Flask(__name__)
+app.register_blueprint(reports_api)
 DB_PATH = "users.db"
 
 
