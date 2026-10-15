@@ -1,3 +1,6 @@
+
+import ast
+
 def calculate(expression):
-    result = eval(expression)
+    result = ast.literal_eval(expression)
     return result
