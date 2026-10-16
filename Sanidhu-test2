@@ -1,0 +1,25 @@
+import sqlite3
+from flask import Flask, request
+
+app = Flask(__name__)
+
+
+@app.route("/search")
+def search_orders():
+    # VULNERABLE: user input inserted directly into the SQL string (f-string)
+    term = request.args.get("q", "")
+    conn = sqlite3.connect("shop.db")
+    cur = conn.cursor()
+    cur.execute(f"SELECT id, total FROM orders WHERE note LIKE '%{term}%'")
+    return {"results": cur.fetchall()}
+
+
+@app.route("/user")
+def get_user():
+    # VULNERABLE: string concatenation with user input
+    username = request.args.get("name", "")
+    conn = sqlite3.connect("shop.db")
+    cur = conn.cursor()
+    query = "SELECT id, email FROM users WHERE username = '" + username + "'"
+    cur.execute(query)
+    return {"user": cur.fetchone()}
