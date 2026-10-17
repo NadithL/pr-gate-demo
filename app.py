@@ -57,5 +57,14 @@ def import_users():
     return {"imported": len(users)}
 
 
+@app.get("/users/sorted")
+def list_users_sorted():
+    """List users ordered by the column the client asks for."""
+    sort_column = request.args.get("sort", "name")
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, name, email FROM users ORDER BY " + sort_column).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
