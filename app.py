@@ -6,7 +6,10 @@ import subprocess
 
 from flask import Flask, abort, jsonify, request
 
+from orders_api import orders_api
+
 app = Flask(__name__)
+app.register_blueprint(orders_api)
 DB_PATH = "users.db"
 ADMIN_API_KEY = "admin-Pr0d-K3y-2026-do-not-share"
 
